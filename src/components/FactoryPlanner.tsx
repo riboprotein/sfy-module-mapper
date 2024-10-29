@@ -1,4 +1,10 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, {
+  useState,
+  useCallback,
+  useEffect,
+  createContext,
+  useContext,
+} from "react";
 import ReactFlow, {
   addEdge,
   Controls,
@@ -44,16 +50,20 @@ interface FactoryType {
   outputs: ResourceIO[];
 }
 
+interface FactoryNodeData {
+  label: string;
+  factoryType: FactoryType;
+  scale: number;
+  onScaleChange: (scale: number) => void;
+  updateNodeAndNeighbors: (nodeId: string) => void;
+  inputStatus: Record<string, boolean>;
+}
+
 interface FactoryNode {
   id: string;
   type: string;
   position: { x: number; y: number };
-  data: {
-    label: string;
-    factoryType: FactoryType;
-    scale: number;
-    onScaleChange: (scale: number) => void;
-  };
+  data: FactoryNodeData;
 }
 
 // Factory type definitions
@@ -102,56 +112,72 @@ const ResourceInput: React.FC<{
         marginBottom: theme.sizing.scale300,
       })}
     >
-      <Select
-        options={validItems.map((item) => ({
-          id: item,
-          label: getItemName(item),
-        }))}
-        value={[{ id: resource.id, label: getItemName(resource.id) }]}
-        onChange={(params) => onChange("id", params.value[0].id as string)}
-        onInputChange={(event) => {
-          const matchingItem = validItems.find((item) =>
-            getItemName(item)
-              .toLowerCase()
-              .includes(event.target.value.toLowerCase()),
-          );
-          if (matchingItem) {
-            onChange("id", matchingItem);
-            onChange("name", getItemName(matchingItem));
-          }
-        }}
-        overrides={{
-          Option: {
-            props: {
-              getItemLabel: (item: { id: string; label: string }) => {
-                const icon = getItemIcon(item.id);
-                return (
-                  <div style={{ display: "flex", alignItems: "center" }}>
-                    {icon && (
-                      <div
-                        style={{
-                          width: "32px",
-                          height: "32px",
-                          backgroundImage: "url(src/assets/sfy/icons.webp)",
-                          backgroundPosition: icon.position,
-                          marginRight: "8px",
-                        }}
-                      />
-                    )}
-                    {item.label}
-                  </div>
-                );
+      <div
+        className={css({ flexGrow: "1", marginRight: theme.sizing.scale300 })}
+      >
+        <Select
+          options={validItems.map((item) => ({
+            id: item,
+            label: getItemName(item),
+          }))}
+          value={[{ id: resource.id, label: getItemName(resource.id) }]}
+          onChange={(params) => onChange("id", params.value[0].id as string)}
+          onInputChange={(event) => {
+            const matchingItem = validItems.find((item) =>
+              getItemName(item)
+                .toLowerCase()
+                .includes(event.target.value.toLowerCase()),
+            );
+            if (matchingItem) {
+              onChange("id", matchingItem);
+              onChange("name", getItemName(matchingItem));
+            }
+          }}
+          overrides={{
+            Option: {
+              props: {
+                getItemLabel: (item: { id: string; label: string }) => {
+                  const icon = getItemIcon(item.id);
+                  return (
+                    <div style={{ display: "flex", alignItems: "center" }}>
+                      {icon && (
+                        <div
+                          style={{
+                            transform: "scale(0.5, 0.5)",
+                            width: "64px",
+                            height: "64px",
+                            backgroundImage: "url(src/assets/sfy/icons.webp)",
+                            backgroundPosition: icon.position,
+                            marginRight: "8px",
+                          }}
+                        />
+                      )}
+                      {item.label}
+                    </div>
+                  );
+                },
               },
             },
-          },
-        }}
-      />
-      <Input
-        value={resource.rate}
-        onChange={(e) => onChange("rate", Number(e.target.value))}
-        type="number"
-        placeholder="Rate"
-      />
+          }}
+        />
+      </div>
+      <div
+        className={css({
+          flexGrow: "1",
+          width: "80px",
+          marginRight: theme.sizing.scale300,
+          minWidth: "80px",
+        })}
+      >
+        <Input
+          value={resource.rate}
+          onChange={(e) =>
+            onChange("rate", Number((e.target as HTMLInputElement).value))
+          }
+          type="number"
+          placeholder="Rate"
+        />
+      </div>
       <Button onClick={onRemove} kind="tertiary">
         -
       </Button>
@@ -272,17 +298,18 @@ const FactoryTypeEditor: React.FC<FactoryTypeEditorProps> = ({
 };
 
 type FactoryNodeProps = {
-  data: {
-    label: string; // Required by ReactFlow
-    factoryType: FactoryType;
-    scale: number;
-    onScaleChange: (newScale: number) => void;
-  };
+  data: FactoryNodeData;
 };
 
-const FactoryNode: React.FC<FactoryNodeProps> = ({ data }) => {
+const FactoryNode: React.FC<FactoryNodeProps> = ({ id, data }) => {
   const [css, theme] = useStyletron();
   const { factoryType, scale, onScaleChange, label } = data;
+  const { updateNodeAndNeighbors } = useFactory();
+
+  useEffect(() => {
+    console.log("calling effect");
+    updateNodeAndNeighbors(id);
+  }, [scale, id]);
 
   const scaleContainer = css({
     display: "flex",
@@ -303,6 +330,15 @@ const FactoryNode: React.FC<FactoryNodeProps> = ({ data }) => {
     justifyContent: "space-between",
     height: "40px",
     position: "relative",
+  });
+
+  const iconStyle = css({
+    transform: "scale(0.5, 0.5)",
+    width: "64px",
+    height: "64px",
+    backgroundImage: "url(src/assets/sfy/icons.webp)",
+    // marginRight: "5px",
+    backgroundSize: "896px 960px",
   });
 
   const handleStyle = css({
@@ -364,9 +400,26 @@ const FactoryNode: React.FC<FactoryNodeProps> = ({ data }) => {
                 type="target"
                 position={Position.Left}
                 id={input.id}
-                style={{ left: "-20px" }}
+                style={{
+                  left: "-20px",
+                  background: data.inputStatus?.[input.id] ? lightBlue : "red",
+                }}
               />
-              <span>{input.name}</span>
+              <div style={{ display: "flex", alignItems: "center" }}>
+                <div
+                  className={iconStyle}
+                  style={{
+                    backgroundPosition: getItemIcon(input.id)?.position,
+                  }}
+                />
+                <span
+                  style={{
+                    color: data.inputStatus?.[input.id] ? "inherit" : "red",
+                  }}
+                >
+                  {input.name}
+                </span>
+              </div>
               <span>{(input.rate * scale).toFixed(1)}/m</span>
             </div>
           ))}
@@ -381,7 +434,15 @@ const FactoryNode: React.FC<FactoryNodeProps> = ({ data }) => {
                 id={output.id}
                 style={{ right: "-20px" }}
               />
-              <span>{output.name}</span>
+              <div style={{ display: "flex", alignItems: "center" }}>
+                <div
+                  className={iconStyle}
+                  style={{
+                    backgroundPosition: getItemIcon(output.id)?.position,
+                  }}
+                />
+                <span>{output.name}</span>
+              </div>
               <span>{(output.rate * scale).toFixed(1)}/m</span>
             </div>
           ))}
@@ -393,6 +454,12 @@ const FactoryNode: React.FC<FactoryNodeProps> = ({ data }) => {
 // Main Component
 //
 //
+type FactoryContextType = {
+  updateNodeAndNeighbors: (nodeId: string) => void;
+};
+const FactoryContext = createContext<FactoryContextType>();
+
+export const useFactory = () => useContext(FactoryContext);
 
 const nodeTypes: NodeTypes = {
   factory: FactoryNode,
@@ -423,7 +490,16 @@ export const FactoryPlannerContent = () => {
       if (savedData) {
         const { nodes, edges, nodeCount } = JSON.parse(savedData);
         console.log("Loading saved data:", { nodes, edges, nodeCount });
-        setNodes(nodes);
+        const restoredNodes = nodes.map((node) => ({
+          ...node,
+          data: {
+            ...node.data,
+            onScaleChange: (newScale: number) =>
+              handleScaleChange(node.id, newScale),
+            updateNodeAndNeighbors: updateNodeAndNeighbors,
+          },
+        }));
+        setNodes(restoredNodes);
         setEdges(edges);
         setNodeCount(nodeCount);
 
@@ -468,7 +544,12 @@ export const FactoryPlannerContent = () => {
     (params: Connection) => {
       // You can add custom validation here
       if (params.source && params.target) {
-        setEdges((eds) => addEdge({ ...params, animated: false }, eds));
+        setEdges((eds) =>
+          addEdge(
+            { ...params, animated: false, style: { stroke: lightBlue } },
+            eds,
+          ),
+        );
       }
     },
     [setEdges],
@@ -503,6 +584,72 @@ export const FactoryPlannerContent = () => {
     [setEdges],
   );
 
+  const checkNodeStatus = useCallback(
+    (node: FactoryNode) => {
+      const { factoryType, scale } = node.data;
+      const inputStatus = factoryType.inputs.reduce(
+        (acc, input) => {
+          const incomingEdges = edges.filter(
+            (e) => e.target === node.id && e.targetHandle === input.id,
+          );
+          const totalIncoming = incomingEdges.reduce((sum, edge) => {
+            const sourceNode = nodes.find(
+              (n) => n.id === edge.source,
+            ) as FactoryNode;
+            const output = sourceNode.data.factoryType.outputs.find(
+              (o) => o.id === edge.sourceHandle,
+            );
+            return sum + (output?.rate ?? 0) * sourceNode.data.scale;
+          }, 0);
+          console.log("totalIncoming", totalIncoming);
+          console.log("required", input.rate * scale);
+          acc[input.id] = totalIncoming >= input.rate * scale;
+          return acc;
+        },
+        {} as Record<string, boolean>,
+      );
+
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          inputStatus,
+        },
+      };
+    },
+    [nodes, edges],
+  );
+
+  const updateNodeAndNeighbors = useCallback(
+    (nodeId: string) => {
+      console.log("updateNodeAndNeighbors", nodeId);
+      console.log("nodes", nodes);
+      const node = nodes.find((n) => n.id === nodeId);
+      console.log("node", node);
+      if (!node) return;
+
+      // Update this node
+      const updatedNode = checkNodeStatus(node);
+
+      // Find and update connected nodes
+      const connectedNodeIds = new Set([
+        ...edges.filter((e) => e.source === nodeId).map((e) => e.target),
+        // ...edges.filter((e) => e.target === nodeId).map((e) => e.source),
+      ]);
+
+      setNodes((currentNodes) =>
+        currentNodes.map((n) =>
+          n.id === nodeId
+            ? updatedNode
+            : connectedNodeIds.has(n.id)
+              ? checkNodeStatus(n)
+              : n,
+        ),
+      );
+    },
+    [nodes, edges, setNodes, checkNodeStatus],
+  );
+
   const addFactory = () => {
     const type = selectedFactory[0].id;
     const factoryType = allFactoryTypes[type];
@@ -519,6 +666,8 @@ export const FactoryPlannerContent = () => {
         scale: 1,
         onScaleChange: (newScale: number) =>
           handleScaleChange(nodeId, newScale),
+        updateNodeAndNeighbors: updateNodeAndNeighbors,
+        inputStatus: {},
       },
     };
 
@@ -536,84 +685,94 @@ export const FactoryPlannerContent = () => {
   });
 
   return (
-    <div style={{ width: "100vw", height: "100vh", display: "flex" }}>
-      <div style={{ flex: 1 }}>
-        <ReactFlow
-          className="dark-theme"
-          defaultEdgeOptions={{
-            style: { strokeWidth: 3, stroke: lightBlue },
-            type: ConnectionLineType.SimpleBezier,
-            animated: true,
-          }}
-          nodes={nodes}
-          edges={edges}
-          onEdgeClick={onEdgeClick}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={handleConnect}
-          nodeTypes={nodeTypes}
-          defaultViewport={{
-            x: 0,
-            y: 0,
-            zoom: 0.25,
-          }}
-          fitView
-          connectOnClick={true}
-          connectionMode={ConnectionMode.Strict}
-          connectionLineType={ConnectionLineType.SimpleBezier}
-          connectionLineStyle={{ strokeWidth: 3 }}
-        >
-          <Background
-            color="#aaa"
-            gap={50}
-            size={4}
-            variant={BackgroundVariant.Dots}
-          />
-          <Controls />
-        </ReactFlow>
+    <FactoryContext.Provider value={{ updateNodeAndNeighbors }}>
+      <div style={{ width: "100vw", height: "100vh", display: "flex" }}>
+        <div style={{ flex: 1 }}>
+          <ReactFlow
+            className="dark-theme"
+            defaultEdgeOptions={{
+              style: { strokeWidth: 3, stroke: lightBlue },
+              type: ConnectionLineType.SimpleBezier,
+              animated: true,
+            }}
+            nodes={nodes}
+            edges={edges}
+            onEdgeClick={onEdgeClick}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={handleConnect}
+            nodeTypes={nodeTypes}
+            defaultViewport={{
+              x: 0,
+              y: 0,
+              zoom: 0.25,
+            }}
+            fitView
+            connectOnClick={true}
+            connectionMode={ConnectionMode.Strict}
+            connectionLineType={ConnectionLineType.SimpleBezier}
+            connectionLineStyle={{ strokeWidth: 3 }}
+          >
+            <Background
+              color="#aaa"
+              gap={50}
+              size={4}
+              variant={BackgroundVariant.Dots}
+            />
+            <Controls />
+          </ReactFlow>
 
-        <div className={controlsStyle}>
-          <Select
-            options={Object.entries(FACTORY_TYPES).map(([key, value]) => ({
-              id: key,
-              label: value.name,
-            }))}
-            value={selectedFactory}
-            onChange={({ value }) =>
-              setSelectedFactory(value as Array<{ id: string; label: string }>)
-            }
-            clearable={false}
-          />
-          <Button onClick={addFactory}>Add Factory</Button>
-          <Button
-            onClick={() =>
-              setEditingFactoryType({
-                id: "",
-                name: "",
-                inputs: [],
-                outputs: [],
-              })
-            }
-          >
-            New Factory Type
-          </Button>
-          <Button
-            onClick={() =>
-              setEditingFactoryType(allFactoryTypes[selectedFactory[0].id])
-            }
-          >
-            Edit Factory Type
-          </Button>
+          <div className={controlsStyle}>
+            <Select
+              options={[
+                ...Object.entries(FACTORY_TYPES).map(([key, value]) => ({
+                  id: key,
+                  label: value.name,
+                })),
+                ...Object.entries(customFactoryTypes).map(([key, value]) => ({
+                  id: key,
+                  label: value.name,
+                })),
+              ]}
+              value={selectedFactory}
+              onChange={({ value }) =>
+                setSelectedFactory(
+                  value as Array<{ id: string; label: string }>,
+                )
+              }
+              clearable={false}
+            />
+            <Button onClick={addFactory}>Add Factory</Button>
+            <Button
+              onClick={() =>
+                setEditingFactoryType({
+                  id: "",
+                  name: "",
+                  inputs: [],
+                  outputs: [],
+                })
+              }
+            >
+              New Factory Type
+            </Button>
+            <Button
+              onClick={() =>
+                setEditingFactoryType(allFactoryTypes[selectedFactory[0].id])
+              }
+            >
+              Edit Factory Type
+            </Button>
+          </div>
         </div>
+        {editingFactoryType && (
+          <FactoryTypeEditor
+            factoryType={editingFactoryType}
+            onSave={handleSaveFactoryType}
+            onClose={() => setEditingFactoryType(null)}
+          />
+        )}
       </div>
-      {editingFactoryType && (
-        <FactoryTypeEditor
-          factoryType={editingFactoryType}
-          onSave={handleSaveFactoryType}
-          onClose={() => setEditingFactoryType(null)}
-        />
-      )}
-    </div>
+    </FactoryContext.Provider>
   );
 };
 
