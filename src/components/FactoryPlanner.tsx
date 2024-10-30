@@ -540,21 +540,6 @@ export const FactoryPlannerContent = () => {
     setEditingFactoryType(null);
   };
 
-  const handleConnect = useCallback(
-    (params: Connection) => {
-      // You can add custom validation here
-      if (params.source && params.target) {
-        setEdges((eds) =>
-          addEdge(
-            { ...params, animated: false, style: { stroke: lightBlue } },
-            eds,
-          ),
-        );
-      }
-    },
-    [setEdges],
-  );
-
   const handleScaleChange = useCallback(
     (nodeId: string, newScale: number) => {
       setNodes((nds) =>
@@ -575,21 +560,12 @@ export const FactoryPlannerContent = () => {
     [setNodes],
   );
 
-  const onEdgeClick = useCallback(
-    (event: React.MouseEvent, edge: Edge) => {
-      if (true) {
-        setEdges((eds) => eds.filter((e) => e.id !== edge.id));
-      }
-    },
-    [setEdges],
-  );
-
   const checkNodeStatus = useCallback(
-    (node: FactoryNode) => {
+    (node: FactoryNode, currentEdges: Edge[]) => {
       const { factoryType, scale } = node.data;
       const inputStatus = factoryType.inputs.reduce(
         (acc, input) => {
-          const incomingEdges = edges.filter(
+          const incomingEdges = currentEdges.filter(
             (e) => e.target === node.id && e.targetHandle === input.id,
           );
           const totalIncoming = incomingEdges.reduce((sum, edge) => {
@@ -601,8 +577,6 @@ export const FactoryPlannerContent = () => {
             );
             return sum + (output?.rate ?? 0) * sourceNode.data.scale;
           }, 0);
-          console.log("totalIncoming", totalIncoming);
-          console.log("required", input.rate * scale);
           acc[input.id] = totalIncoming >= input.rate * scale;
           return acc;
         },
@@ -617,38 +591,89 @@ export const FactoryPlannerContent = () => {
         },
       };
     },
-    [nodes, edges],
+    [nodes],
   );
 
   const updateNodeAndNeighbors = useCallback(
-    (nodeId: string) => {
-      console.log("updateNodeAndNeighbors", nodeId);
-      console.log("nodes", nodes);
+    (nodeId: string, currentEdges?: Edge[]) => {
+      const edgesToUse = currentEdges || edges;
       const node = nodes.find((n) => n.id === nodeId);
-      console.log("node", node);
       if (!node) return;
 
-      // Update this node
-      const updatedNode = checkNodeStatus(node);
-
-      // Find and update connected nodes
-      const connectedNodeIds = new Set([
-        ...edges.filter((e) => e.source === nodeId).map((e) => e.target),
-        // ...edges.filter((e) => e.target === nodeId).map((e) => e.source),
-      ]);
+      const updatedNode = checkNodeStatus(node, edgesToUse);
 
       setNodes((currentNodes) =>
-        currentNodes.map((n) =>
-          n.id === nodeId
-            ? updatedNode
-            : connectedNodeIds.has(n.id)
-              ? checkNodeStatus(n)
-              : n,
-        ),
+        currentNodes.map((n) => (n.id === nodeId ? updatedNode : n)),
       );
+
+      // Find and update connected nodes
+      const connectedNodeIds = new Set(
+        edgesToUse.filter((e) => e.source === nodeId).map((e) => e.target),
+      );
+
+      connectedNodeIds.forEach((connectedId) => {
+        const connectedNode = nodes.find((n) => n.id === connectedId);
+        if (connectedNode) {
+          const updatedConnectedNode = checkNodeStatus(
+            connectedNode,
+            edgesToUse,
+          );
+          setNodes((currentNodes) =>
+            currentNodes.map((n) =>
+              n.id === connectedId ? updatedConnectedNode : n,
+            ),
+          );
+        }
+      });
     },
-    [nodes, edges, setNodes, checkNodeStatus],
+    [nodes, edges, checkNodeStatus, setNodes],
   );
+
+  const handleConnect = useCallback(
+    (params: Connection) => {
+      if (params.source && params.target) {
+        setEdges((eds) => {
+          const newEdges = addEdge(
+            { ...params, animated: false, style: { stroke: lightBlue } },
+            eds,
+          );
+          // Use setTimeout to ensure this runs after the state update
+          setTimeout(() => {
+            updateNodeAndNeighbors(params.target, newEdges);
+          }, 0);
+          return newEdges;
+        });
+      }
+    },
+    [setEdges, updateNodeAndNeighbors],
+  );
+
+  const onEdgeClick = useCallback(
+    (event: React.MouseEvent, edge: Edge) => {
+      setEdges((eds) => {
+        const newEdges = eds.filter((e) => e.id !== edge.id);
+        // Use setTimeout to ensure this runs after the state update
+        setTimeout(() => {
+          updateNodeAndNeighbors(edge.source, newEdges);
+          updateNodeAndNeighbors(edge.target, newEdges);
+        }, 0);
+        return newEdges;
+      });
+    },
+    [setEdges, updateNodeAndNeighbors],
+  );
+
+  useEffect(() => {
+    // Find all unique node IDs involved in the edges
+    const affectedNodeIds = new Set(
+      edges.flatMap((edge) => [edge.source, edge.target]),
+    );
+
+    // Update all affected nodes
+    affectedNodeIds.forEach((nodeId) => {
+      updateNodeAndNeighbors(nodeId);
+    });
+  }, [edges, updateNodeAndNeighbors]);
 
   const addFactory = () => {
     const type = selectedFactory[0].id;
