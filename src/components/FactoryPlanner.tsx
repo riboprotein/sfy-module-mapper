@@ -55,8 +55,8 @@ interface FactoryNodeData {
   factoryType: FactoryType;
   scale: number;
   onScaleChange: (scale: number) => void;
-  updateNodeAndNeighbors: (nodeId: string) => void;
   inputStatus: Record<string, boolean>;
+  setSelectedFactory: (factoryId: string) => void;
 }
 
 interface FactoryNode {
@@ -68,7 +68,7 @@ interface FactoryNode {
 
 // Factory type definitions
 const FACTORY_TYPES: Record<string, FactoryType> = {
-  STEEL: {
+  steel: {
     id: "steel",
     name: "Steel Factory",
     inputs: [{ id: "iron-ore", name: "Iron Ore", rate: 120 }],
@@ -77,7 +77,7 @@ const FACTORY_TYPES: Record<string, FactoryType> = {
       { id: "steel-beam", name: "Steel Beam", rate: 10 },
     ],
   },
-  COPPER: {
+  copper: {
     id: "copper",
     name: "Copper Factory",
     inputs: [{ id: "copper-ore", name: "Copper Ore", rate: 60 }],
@@ -298,12 +298,13 @@ const FactoryTypeEditor: React.FC<FactoryTypeEditorProps> = ({
 };
 
 type FactoryNodeProps = {
+  id: string;
   data: FactoryNodeData;
 };
 
 const FactoryNode: React.FC<FactoryNodeProps> = ({ id, data }) => {
   const [css, theme] = useStyletron();
-  const { factoryType, scale, onScaleChange, label } = data;
+  const { factoryType, scale, onScaleChange, label, setSelectedFactory } = data;
   const { updateNodeAndNeighbors } = useFactory();
 
   useEffect(() => {
@@ -356,8 +357,13 @@ const FactoryNode: React.FC<FactoryNodeProps> = ({ id, data }) => {
     },
   });
 
+  const handleNodeClick = useCallback(() => {
+    console.log("got click", data.factoryType.id);
+    setSelectedFactory(data.factoryType.id);
+  }, [data.factoryType.id, setSelectedFactory]);
+
   return (
-    <div className={nodeContainer}>
+    <div className={nodeContainer} onClick={handleNodeClick}>
       <Card>
         <StyledBody>
           <div
@@ -470,11 +476,9 @@ export const FactoryPlannerContent = () => {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [nodeCount, setNodeCount] = useState(0);
-  const [selectedFactory, setSelectedFactory] = useState<
-    Array<{ id: string; label: string }>
-  >([{ id: "STEEL", label: "Steel Factory" }]);
-  const [isInitialized, setIsInitialized] = useState(false);
+  const [selectedFactory, setSelectedFactory] = useState<string>("steel");
 
+  const [isInitialized, setIsInitialized] = useState(false);
   const [customFactoryTypes, setCustomFactoryTypes] = useState<
     Record<string, FactoryType>
   >({});
@@ -482,7 +486,6 @@ export const FactoryPlannerContent = () => {
     useState<FactoryType | null>(null);
 
   const allFactoryTypes = { ...FACTORY_TYPES, ...customFactoryTypes };
-
   // Load data on component mount
   useEffect(() => {
     if (!isInitialized) {
@@ -497,6 +500,7 @@ export const FactoryPlannerContent = () => {
             onScaleChange: (newScale: number) =>
               handleScaleChange(node.id, newScale),
             updateNodeAndNeighbors: updateNodeAndNeighbors,
+            setSelectedFactory,
           },
         }));
         setNodes(restoredNodes);
@@ -537,6 +541,7 @@ export const FactoryPlannerContent = () => {
       ...prev,
       [factoryType.id]: factoryType,
     }));
+    setSelectedFactory(factoryType.id);
     setEditingFactoryType(null);
   };
 
@@ -676,8 +681,7 @@ export const FactoryPlannerContent = () => {
   }, [edges, updateNodeAndNeighbors]);
 
   const addFactory = () => {
-    const type = selectedFactory[0].id;
-    const factoryType = allFactoryTypes[type];
+    const factoryType = allFactoryTypes[selectedFactory];
     const newCount = nodeCount + 1;
     const nodeId = `factory-${newCount}`;
 
@@ -693,6 +697,7 @@ export const FactoryPlannerContent = () => {
           handleScaleChange(nodeId, newScale),
         updateNodeAndNeighbors: updateNodeAndNeighbors,
         inputStatus: {},
+        setSelectedFactory,
       },
     };
 
@@ -733,6 +738,7 @@ export const FactoryPlannerContent = () => {
               zoom: 0.25,
             }}
             fitView
+            minZoom={0.01}
             connectOnClick={true}
             connectionMode={ConnectionMode.Strict}
             connectionLineType={ConnectionLineType.SimpleBezier}
@@ -759,30 +765,32 @@ export const FactoryPlannerContent = () => {
                   label: value.name,
                 })),
               ]}
-              value={selectedFactory}
-              onChange={({ value }) =>
-                setSelectedFactory(
-                  value as Array<{ id: string; label: string }>,
-                )
-              }
+              value={[
+                {
+                  id: selectedFactory,
+                  label: allFactoryTypes[selectedFactory].name,
+                },
+              ]}
+              onChange={({ value }) => setSelectedFactory(value[0].id)}
               clearable={false}
             />
             <Button onClick={addFactory}>Add Factory</Button>
             <Button
-              onClick={() =>
+              onClick={() => {
+                const newId = `custom-${Date.now()}`;
                 setEditingFactoryType({
-                  id: "",
+                  id: newId,
                   name: "",
                   inputs: [],
                   outputs: [],
-                })
-              }
+                });
+              }}
             >
               New Factory Type
             </Button>
             <Button
               onClick={() =>
-                setEditingFactoryType(allFactoryTypes[selectedFactory[0].id])
+                setEditingFactoryType(allFactoryTypes[selectedFactory])
               }
             >
               Edit Factory Type
