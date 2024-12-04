@@ -5,6 +5,7 @@ import React, {
   createContext,
   useContext,
 } from "react";
+import _ from "lodash";
 import ReactFlow, {
   addEdge,
   Controls,
@@ -471,6 +472,27 @@ const nodeTypes: NodeTypes = {
   factory: FactoryNode,
 };
 
+const compress = async (jsonData) => {
+  const jsonString =
+    typeof jsonData === "string" ? jsonData : JSON.stringify(jsonData);
+
+  // Create readable stream from string
+  const readable = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode(jsonString));
+      controller.close();
+    },
+  });
+
+  // Pipe through compression
+  const compressedStream = readable.pipeThrough(new CompressionStream("gzip"));
+
+  // Get the compressed data size
+  const response = new Response(compressedStream);
+  const blob = await response.blob();
+  return blob;
+};
+
 export const FactoryPlannerContent = () => {
   const [css, theme] = useStyletron();
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
@@ -519,12 +541,33 @@ export const FactoryPlannerContent = () => {
 
   useEffect(() => {
     if (isInitialized) {
-      const saveToLocalStorage = () => {
+      const saveToLocalStorage = async () => {
         const flow = {
           nodes,
           edges,
           nodeCount,
+          customFactoryTypes,
         };
+        const jsonString = JSON.stringify(flow);
+        const characterLength = jsonString.length;
+        console.log("characterLength", characterLength);
+
+        // 2. Get approximate size in bytes
+        const bytes = new TextEncoder().encode(jsonString).length;
+        // console.log("bytes", bytes);
+
+        // Get compressed size
+        console.log("about to call compress");
+        const compressBlob = await compress(jsonString);
+        console.log("compressedString", compressBlob);
+        // console.log("compressBlob.length", compressBlob.length);
+
+        console.log("Compressed size (bytes):", compressBlob.size);
+        console.log(
+          "Compression ratio:",
+          (((bytes - compressBlob.size) / bytes) * 100).toFixed(2) + "%",
+        );
+
         localStorage.setItem("factoryPlannerData", JSON.stringify(flow));
         localStorage.setItem(
           "customFactoryTypes",
@@ -537,6 +580,7 @@ export const FactoryPlannerContent = () => {
   }, [isInitialized, nodes, edges, nodeCount, customFactoryTypes]);
 
   const handleSaveFactoryType = (factoryType: FactoryType) => {
+    console.log("handleSaveFactoryType");
     setCustomFactoryTypes((prev) => ({
       ...prev,
       [factoryType.id]: factoryType,
@@ -547,6 +591,7 @@ export const FactoryPlannerContent = () => {
 
   const handleScaleChange = useCallback(
     (nodeId: string, newScale: number) => {
+      console.log("handleScaleChange");
       setNodes((nds) =>
         nds.map((node) => {
           if (node.id === nodeId) {
@@ -567,6 +612,7 @@ export const FactoryPlannerContent = () => {
 
   const checkNodeStatus = useCallback(
     (node: FactoryNode, currentEdges: Edge[]) => {
+      // console.log("checkNodeStatus");
       const { factoryType, scale } = node.data;
       const inputStatus = factoryType.inputs.reduce(
         (acc, input) => {
@@ -588,6 +634,10 @@ export const FactoryPlannerContent = () => {
         {} as Record<string, boolean>,
       );
 
+      if (_.isEqual(inputStatus, node.data.inputStatus)) {
+        return node;
+      }
+
       return {
         ...node,
         data: {
@@ -606,15 +656,18 @@ export const FactoryPlannerContent = () => {
       if (!node) return;
 
       const updatedNode = checkNodeStatus(node, edgesToUse);
-
-      setNodes((currentNodes) =>
-        currentNodes.map((n) => (n.id === nodeId ? updatedNode : n)),
-      );
+      if (updatedNode !== node) {
+        setNodes((currentNodes) =>
+          currentNodes.map((n) => (n.id === nodeId ? updatedNode : n)),
+        );
+      }
 
       // Find and update connected nodes
       const connectedNodeIds = new Set(
         edgesToUse.filter((e) => e.source === nodeId).map((e) => e.target),
       );
+
+      // console.log("connectedNodeIds", connectedNodeIds);
 
       connectedNodeIds.forEach((connectedId) => {
         const connectedNode = nodes.find((n) => n.id === connectedId);
@@ -623,11 +676,14 @@ export const FactoryPlannerContent = () => {
             connectedNode,
             edgesToUse,
           );
-          setNodes((currentNodes) =>
-            currentNodes.map((n) =>
-              n.id === connectedId ? updatedConnectedNode : n,
-            ),
-          );
+
+          if (updatedConnectedNode !== connectedNode) {
+            setNodes((currentNodes) =>
+              currentNodes.map((n) =>
+                n.id === connectedId ? updatedConnectedNode : n,
+              ),
+            );
+          }
         }
       });
     },
@@ -636,6 +692,7 @@ export const FactoryPlannerContent = () => {
 
   const handleConnect = useCallback(
     (params: Connection) => {
+      console.log("handleconnect");
       if (params.source && params.target) {
         setEdges((eds) => {
           const newEdges = addEdge(
@@ -655,6 +712,7 @@ export const FactoryPlannerContent = () => {
 
   const onEdgeClick = useCallback(
     (event: React.MouseEvent, edge: Edge) => {
+      console.log("onEdgeClick");
       setEdges((eds) => {
         const newEdges = eds.filter((e) => e.id !== edge.id);
         // Use setTimeout to ensure this runs after the state update

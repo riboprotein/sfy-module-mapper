@@ -3,15 +3,14 @@ import { getConfig } from "./config";
 
 export const createJSONBinHelper = () => {
   const BASE_URL = "https://api.jsonbin.io/v3";
-  const { binId, apiKey } = getConfig();
+  const { apiKey } = getConfig();
 
   // Decode the values when using them
-  const decodedBinId = atob(binId);
   const decodedApiKey = atob(apiKey);
 
-  const saveData = async <T>(data: T) => {
+  const saveData = async <T>(binId: string, data: T) => {
     try {
-      const response = await fetch(`${BASE_URL}/b/${decodedBinId}`, {
+      const response = await fetch(`${BASE_URL}/b/${binId}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -32,9 +31,9 @@ export const createJSONBinHelper = () => {
     }
   };
 
-  const getData = async <T>() => {
+  const getData = async <T>(binId: string) => {
     try {
-      const response = await fetch(`${BASE_URL}/b/${decodedBinId}/latest`, {
+      const response = await fetch(`${BASE_URL}/b/${binId}/latest`, {
         headers: {
           "X-Master-Key": decodedApiKey,
         },
