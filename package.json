@@ -5,8 +5,6 @@
   "type": "module",
   "repo": "https://riboprotein.github.io/sfy-module-mapper",
   "scripts": {
-    "predeploy": "npm run build",
-    "deploy": "gh-pages -d dist",
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
